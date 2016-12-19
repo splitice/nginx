@@ -140,16 +140,16 @@ ngx_http_gunzip_header_filter(ngx_http_request_t *r)
     if(!conf->enable) {
         return ngx_http_next_header_filter(r);
     }
-    
-    if(ngx_http_test_predicates(r, conf->force) != NGX_DECLINED) {
-        if (r->headers_out.content_encoding == NULL
+	
+	if (r->headers_out.content_encoding == NULL
             || r->headers_out.content_encoding->value.len != 4
             || ngx_strncasecmp(r->headers_out.content_encoding->value.data,
                                (u_char *) "gzip", 4) != 0)
-        {
-            return ngx_http_next_header_filter(r);
-        }
+	{
+		return ngx_http_next_header_filter(r);
+	}
     
+    if(ngx_http_test_predicates(r, conf->force) != NGX_DECLINED) {    
 		r->gzip_vary = 1;
 
 		if (!r->gzip_tested) {
