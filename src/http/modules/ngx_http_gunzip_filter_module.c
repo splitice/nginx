@@ -16,6 +16,7 @@
 typedef struct {
     ngx_flag_t           enable;
     ngx_bufs_t           bufs;
+    ngx_array_t         *force;
 } ngx_http_gunzip_conf_t;
 
 
@@ -77,6 +78,13 @@ static ngx_command_t  ngx_http_gunzip_filter_commands[] = {
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_gunzip_conf_t, bufs),
       NULL },
+      
+    { ngx_string("gunzip_force"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
+      ngx_http_set_predicate_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_gunzip_conf_t, force),
+      NULL },
 
       ngx_null_command
 };
@@ -128,16 +136,21 @@ ngx_http_gunzip_header_filter(ngx_http_request_t *r)
     /* TODO support multiple content-codings */
     /* TODO always gunzip - due to configuration or module request */
     /* TODO ignore content encoding? */
-
-    if (!conf->enable
-        || r->headers_out.content_encoding == NULL
-        || r->headers_out.content_encoding->value.len != 4
-        || ngx_strncasecmp(r->headers_out.content_encoding->value.data,
-                           (u_char *) "gzip", 4) != 0)
-    {
+    
+    if(!conf->enable) {
         return ngx_http_next_header_filter(r);
     }
-
+    
+    if(ngx_http_test_predicates(r, u->conf->cache_bypass) != NGX_DECLINED) {
+        if (r->headers_out.content_encoding == NULL
+            || r->headers_out.content_encoding->value.len != 4
+            || ngx_strncasecmp(r->headers_out.content_encoding->value.data,
+                               (u_char *) "gzip", 4) != 0)
+        {
+            return ngx_http_next_header_filter(r);
+        }
+    }
+    
     r->gzip_vary = 1;
 
     if (!r->gzip_tested) {
@@ -654,6 +667,7 @@ ngx_http_gunzip_create_conf(ngx_conf_t *cf)
      */
 
     conf->enable = NGX_CONF_UNSET;
+    conf->force = NGX_CONF_UNSET_PTR;
 
     return conf;
 }
@@ -669,6 +683,8 @@ ngx_http_gunzip_merge_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_bufs_value(conf->bufs, prev->bufs,
                               (128 * 1024) / ngx_pagesize, ngx_pagesize);
+                              
+    ngx_conf_merge_ptr_value(conf->force, prev->force, NULL);
 
     return NGX_CONF_OK;
 }
