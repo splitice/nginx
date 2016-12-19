@@ -410,7 +410,7 @@ ngx_vslprintf(u_char *buf, u_char *last, const char *fmt, va_list args)
                 hex = 2;
                 sign = 0;
                 zero = '0';
-                width = NGX_PTR_SIZE * 2;
+                width = 2 * sizeof(void *);
                 break;
 
             case 'c':
@@ -1563,7 +1563,7 @@ ngx_escape_uri(u_char *dst, u_char *src, size_t size, ngx_uint_t type)
         n = 0;
 
         while (size) {
-            if (escape[*src >> 5] & (1 << (*src & 0x1f))) {
+            if (escape[*src >> 5] & (1U << (*src & 0x1f))) {
                 n++;
             }
             src++;
@@ -1574,7 +1574,7 @@ ngx_escape_uri(u_char *dst, u_char *src, size_t size, ngx_uint_t type)
     }
 
     while (size) {
-        if (escape[*src >> 5] & (1 << (*src & 0x1f))) {
+        if (escape[*src >> 5] & (1U << (*src & 0x1f))) {
             *dst++ = '%';
             *dst++ = hex[*src >> 4];
             *dst++ = hex[*src & 0xf];
