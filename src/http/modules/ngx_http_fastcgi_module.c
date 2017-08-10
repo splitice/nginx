@@ -211,6 +211,7 @@ static ngx_conf_bitmask_t  ngx_http_fastcgi_next_upstream_masks[] = {
     { ngx_string("http_503"), NGX_HTTP_UPSTREAM_FT_HTTP_503 },
     { ngx_string("http_403"), NGX_HTTP_UPSTREAM_FT_HTTP_403 },
     { ngx_string("http_404"), NGX_HTTP_UPSTREAM_FT_HTTP_404 },
+    { ngx_string("http_429"), NGX_HTTP_UPSTREAM_FT_HTTP_429 },
     { ngx_string("updating"), NGX_HTTP_UPSTREAM_FT_UPDATING },
     { ngx_string("off"), NGX_HTTP_UPSTREAM_FT_OFF },
     { ngx_null_string, 0 }
@@ -469,6 +470,13 @@ static ngx_command_t  ngx_http_fastcgi_commands[] = {
       offsetof(ngx_http_fastcgi_loc_conf_t, upstream.cache_revalidate),
       NULL },
 
+    { ngx_string("fastcgi_cache_background_update"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_fastcgi_loc_conf_t, upstream.cache_background_update),
+      NULL },
+
 #endif
 
     { ngx_string("fastcgi_temp_path"),
@@ -623,7 +631,7 @@ static ngx_http_variable_t  ngx_http_fastcgi_vars[] = {
       ngx_http_fastcgi_path_info_variable, 0,
       NGX_HTTP_VAR_NOCACHEABLE|NGX_HTTP_VAR_NOHASH, 0 },
 
-    { ngx_null_string, NULL, NULL, 0, 0, 0 }
+      ngx_http_null_variable
 };
 
 
@@ -1870,6 +1878,7 @@ ngx_http_fastcgi_process_header(ngx_http_request_t *r)
 
                     p = ngx_pnalloc(r->pool, size);
                     if (p == NULL) {
+                        h->hash = 0;
                         return NGX_ERROR;
                     }
 
@@ -1892,6 +1901,7 @@ ngx_http_fastcgi_process_header(ngx_http_request_t *r)
                         ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0,
                                       "invalid header after joining "
                                       "FastCGI records");
+                        h->hash = 0;
                         return NGX_ERROR;
                     }
 
@@ -1917,6 +1927,7 @@ ngx_http_fastcgi_process_header(ngx_http_request_t *r)
                                               h->key.len + 1 + h->value.len + 1
                                               + h->key.len);
                     if (h->key.data == NULL) {
+                        h->hash = 0;
                         return NGX_ERROR;
                     }
 
@@ -2769,6 +2780,7 @@ ngx_http_fastcgi_create_loc_conf(ngx_conf_t *cf)
     conf->upstream.cache_lock_timeout = NGX_CONF_UNSET_MSEC;
     conf->upstream.cache_lock_age = NGX_CONF_UNSET_MSEC;
     conf->upstream.cache_revalidate = NGX_CONF_UNSET;
+    conf->upstream.cache_background_update = NGX_CONF_UNSET;
 #endif
 
     conf->upstream.hide_headers = NGX_CONF_UNSET_PTR;
@@ -3060,6 +3072,9 @@ ngx_http_fastcgi_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_value(conf->upstream.cache_revalidate,
                               prev->upstream.cache_revalidate, 0);
+
+    ngx_conf_merge_value(conf->upstream.cache_background_update,
+                              prev->upstream.cache_background_update, 0);
 
 #endif
 

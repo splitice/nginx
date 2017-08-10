@@ -121,7 +121,17 @@ ngx_ssl_init(ngx_log_t *log)
 {
 #if OPENSSL_VERSION_NUMBER >= 0x10100003L
 
-    OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, NULL);
+    if (OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, NULL) == 0) {
+        ngx_ssl_error(NGX_LOG_ALERT, log, 0, "OPENSSL_init_ssl() failed");
+        return NGX_ERROR;
+    }
+
+    /*
+     * OPENSSL_init_ssl() may leave errors in the error queue
+     * while returning success
+     */
+
+    ERR_clear_error();
 
 #else
 
@@ -311,6 +321,12 @@ ngx_ssl_create(ngx_ssl_t *ssl, ngx_uint_t protocols, void *data)
     SSL_CTX_clear_options(ssl->ctx, SSL_OP_NO_TLSv1_2);
     if (!(protocols & NGX_SSL_TLSv1_2)) {
         SSL_CTX_set_options(ssl->ctx, SSL_OP_NO_TLSv1_2);
+    }
+#endif
+#ifdef SSL_OP_NO_TLSv1_3
+    SSL_CTX_clear_options(ssl->ctx, SSL_OP_NO_TLSv1_3);
+    if (!(protocols & NGX_SSL_TLSv1_3)) {
+        SSL_CTX_set_options(ssl->ctx, SSL_OP_NO_TLSv1_3);
     }
 #endif
 
@@ -821,7 +837,9 @@ ngx_ssl_info_callback(const ngx_ssl_conn_t *ssl_conn, int where, int ret)
     BIO               *rbio, *wbio;
     ngx_connection_t  *c;
 
-    if (where & SSL_CB_HANDSHAKE_START) {
+    if ((where & SSL_CB_HANDSHAKE_START)
+        && SSL_is_server((ngx_ssl_conn_t *) ssl_conn))
+    {
         c = ngx_ssl_get_connection((ngx_ssl_conn_t *) ssl_conn);
 
         if (c->ssl->handshaked) {
@@ -906,6 +924,7 @@ ngx_ssl_read_password_file(ngx_conf_t *cf, ngx_str_t *file)
     cln->data = passwords;
 
     fd = ngx_open_file(file->data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
+
     if (fd == NGX_INVALID_FILE) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
                            ngx_open_file_n " \"%s\" failed", file->data);
@@ -1072,7 +1091,7 @@ ngx_ssl_ecdh_curve(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *name)
      * maximum interoperability.
      */
 
-#ifdef SSL_CTRL_SET_CURVES_LIST
+#if (defined SSL_CTX_set1_curves_list || defined SSL_CTRL_SET_CURVES_LIST)
 
     /*
      * OpenSSL 1.0.2+ allows configuring a curve list instead of a single
@@ -1282,7 +1301,7 @@ ngx_ssl_handshake(ngx_connection_t *c)
 #ifdef SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS
 
         /* initial handshake done, disable renegotiation (CVE-2009-3555) */
-        if (c->ssl->connection->s3) {
+        if (c->ssl->connection->s3 && SSL_is_server(c->ssl->connection)) {
             c->ssl->connection->s3->flags |= SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS;
         }
 
@@ -2856,7 +2875,8 @@ ngx_ssl_session_rbtree_insert_value(ngx_rbtree_node_t *temp,
 ngx_int_t
 ngx_ssl_session_ticket_keys(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *paths)
 {
-    u_char                         buf[48];
+    u_char                         buf[80];
+    size_t                         size;
     ssize_t                        n;
     ngx_str_t                     *path;
     ngx_file_t                     file;
@@ -2886,7 +2906,9 @@ ngx_ssl_session_ticket_keys(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *paths)
         file.name = path[i];
         file.log = cf->log;
 
-        file.fd = ngx_open_file(file.name.data, NGX_FILE_RDONLY, 0, 0);
+        file.fd = ngx_open_file(file.name.data, NGX_FILE_RDONLY,
+                                NGX_FILE_OPEN, 0);
+
         if (file.fd == NGX_INVALID_FILE) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
                                ngx_open_file_n " \"%V\" failed", &file.name);
@@ -2899,13 +2921,15 @@ ngx_ssl_session_ticket_keys(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *paths)
             goto failed;
         }
 
-        if (ngx_file_size(&fi) != 48) {
+        size = ngx_file_size(&fi);
+
+        if (size != 48 && size != 80) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "\"%V\" must be 48 bytes", &file.name);
+                               "\"%V\" must be 48 or 80 bytes", &file.name);
             goto failed;
         }
 
-        n = ngx_read_file(&file, buf, 48, 0);
+        n = ngx_read_file(&file, buf, size, 0);
 
         if (n == NGX_ERROR) {
             ngx_conf_log_error(NGX_LOG_CRIT, cf, ngx_errno,
@@ -2913,10 +2937,10 @@ ngx_ssl_session_ticket_keys(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *paths)
             goto failed;
         }
 
-        if (n != 48) {
+        if ((size_t) n != size) {
             ngx_conf_log_error(NGX_LOG_CRIT, cf, 0,
                                ngx_read_file_n " \"%V\" returned only "
-                               "%z bytes instead of 48", &file.name, n);
+                               "%z bytes instead of %uz", &file.name, n, size);
             goto failed;
         }
 
@@ -2925,9 +2949,18 @@ ngx_ssl_session_ticket_keys(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *paths)
             goto failed;
         }
 
-        ngx_memcpy(key->name, buf, 16);
-        ngx_memcpy(key->aes_key, buf + 16, 16);
-        ngx_memcpy(key->hmac_key, buf + 32, 16);
+        if (size == 48) {
+            key->size = 48;
+            ngx_memcpy(key->name, buf, 16);
+            ngx_memcpy(key->aes_key, buf + 16, 16);
+            ngx_memcpy(key->hmac_key, buf + 32, 16);
+
+        } else {
+            key->size = 80;
+            ngx_memcpy(key->name, buf, 16);
+            ngx_memcpy(key->hmac_key, buf + 16, 32);
+            ngx_memcpy(key->aes_key, buf + 48, 32);
+        }
 
         if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
             ngx_log_error(NGX_LOG_ALERT, cf->log, ngx_errno,
@@ -2972,6 +3005,7 @@ ngx_ssl_session_ticket_key_callback(ngx_ssl_conn_t *ssl_conn,
     unsigned char *name, unsigned char *iv, EVP_CIPHER_CTX *ectx,
     HMAC_CTX *hctx, int enc)
 {
+    size_t                         size;
     SSL_CTX                       *ssl_ctx;
     ngx_uint_t                     i;
     ngx_array_t                   *keys;
@@ -2986,7 +3020,6 @@ ngx_ssl_session_ticket_key_callback(ngx_ssl_conn_t *ssl_conn,
     c = ngx_ssl_get_connection(ssl_conn);
     ssl_ctx = c->ssl->session_ctx;
 
-    cipher = EVP_aes_128_cbc();
 #ifdef OPENSSL_NO_SHA256
     digest = EVP_sha1();
 #else
@@ -3008,6 +3041,15 @@ ngx_ssl_session_ticket_key_callback(ngx_ssl_conn_t *ssl_conn,
                        ngx_hex_dump(buf, key[0].name, 16) - buf, buf,
                        SSL_session_reused(ssl_conn) ? "reused" : "new");
 
+        if (key[0].size == 48) {
+            cipher = EVP_aes_128_cbc();
+            size = 16;
+
+        } else {
+            cipher = EVP_aes_256_cbc();
+            size = 32;
+        }
+
         if (RAND_bytes(iv, EVP_CIPHER_iv_length(cipher)) != 1) {
             ngx_ssl_error(NGX_LOG_ALERT, c->log, 0, "RAND_bytes() failed");
             return -1;
@@ -3020,12 +3062,12 @@ ngx_ssl_session_ticket_key_callback(ngx_ssl_conn_t *ssl_conn,
         }
 
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
-        if (HMAC_Init_ex(hctx, key[0].hmac_key, 16, digest, NULL) != 1) {
+        if (HMAC_Init_ex(hctx, key[0].hmac_key, size, digest, NULL) != 1) {
             ngx_ssl_error(NGX_LOG_ALERT, c->log, 0, "HMAC_Init_ex() failed");
             return -1;
         }
 #else
-        HMAC_Init_ex(hctx, key[0].hmac_key, 16, digest, NULL);
+        HMAC_Init_ex(hctx, key[0].hmac_key, size, digest, NULL);
 #endif
 
         ngx_memcpy(name, key[0].name, 16);
@@ -3054,13 +3096,22 @@ ngx_ssl_session_ticket_key_callback(ngx_ssl_conn_t *ssl_conn,
                        ngx_hex_dump(buf, key[i].name, 16) - buf, buf,
                        (i == 0) ? " (default)" : "");
 
+        if (key[i].size == 48) {
+            cipher = EVP_aes_128_cbc();
+            size = 16;
+
+        } else {
+            cipher = EVP_aes_256_cbc();
+            size = 32;
+        }
+
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
-        if (HMAC_Init_ex(hctx, key[i].hmac_key, 16, digest, NULL) != 1) {
+        if (HMAC_Init_ex(hctx, key[i].hmac_key, size, digest, NULL) != 1) {
             ngx_ssl_error(NGX_LOG_ALERT, c->log, 0, "HMAC_Init_ex() failed");
             return -1;
         }
 #else
-        HMAC_Init_ex(hctx, key[i].hmac_key, 16, digest, NULL);
+        HMAC_Init_ex(hctx, key[i].hmac_key, size, digest, NULL);
 #endif
 
         if (EVP_DecryptInit_ex(ectx, cipher, NULL, key[i].aes_key, iv) != 1) {
@@ -3080,7 +3131,7 @@ ngx_ssl_session_ticket_keys(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *paths)
 {
     if (paths) {
         ngx_log_error(NGX_LOG_WARN, ssl->log, 0,
-                      "\"ssl_session_ticket_keys\" ignored, not supported");
+                      "\"ssl_session_ticket_key\" ignored, not supported");
     }
 
     return NGX_OK;
