@@ -80,6 +80,9 @@ typedef struct {
     unsigned                   deferred_accept:1;
     unsigned                   reuseport:1;
     unsigned                   so_keepalive:2;
+#if (NGX_HAVE_TPROXY)
+    unsigned                   tproxy:1;
+#endif
     unsigned                   proxy_protocol:1;
 
     int                        backlog;

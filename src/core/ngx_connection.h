@@ -86,6 +86,8 @@ struct ngx_listening_s {
 #if (NGX_HAVE_TCP_FASTOPEN)
     int                 fastopen;
 #endif
+#if (NGX_HAVE_TPROXY)
+#endif
 
 };
 

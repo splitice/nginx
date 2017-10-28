@@ -87,6 +87,10 @@ ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr,
     ls->fastopen = -1;
 #endif
 
+#if (NGX_HAVE_TPROXY)
+    ls->tproxy = 0;
+#endif
+
     return ls;
 }
 
@@ -146,6 +150,9 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 #endif
 #if (NGX_HAVE_REUSEPORT)
     int                        reuseport;
+#endif
+#if (NGX_HAVE_TPROXY)
+    int                        tproxy;
 #endif
 
     ls = cycle->listening.elts;
@@ -287,6 +294,24 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 
 #endif
 
+#if (NGX_HAVE_TPROXY)
+
+        tproxy = 0;
+
+        if (getsockopt(ls[i].fd, SOL_SOCKET, IP_TRANSPARENT,
+                       (void *) &tproxy, &olen)
+            == -1)
+        {
+            ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_socket_errno,
+                          "getsockopt(IP_TRANSPARENT) %V failed, ignored",
+                          &ls[i].addr_text);
+
+        } else {
+            ls[i].tproxy = tproxy ? 1 : 0;
+        }
+
+#endif
+
         if (ls[i].type != SOCK_STREAM) {
             continue;
         }
@@ -371,6 +396,7 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 
         ls[i].deferred_accept = 1;
 #endif
+
     }
 
     return NGX_OK;
@@ -386,6 +412,9 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
     ngx_log_t        *log;
     ngx_socket_t      s;
     ngx_listening_t  *ls;
+#if (NGX_HAVE_TPROXY)
+    int               tproxy;
+#endif
 
     reuseaddr = 1;
 #if (NGX_SUPPRESS_WARN)
@@ -531,6 +560,19 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                     return NGX_ERROR;
                 }
             }
+
+#if (NGX_HAVE_TPROXY)
+            /* TPROXY support requires enabled (SOL_IP, IP_TRANSPARENT)       */
+            /* socket option to be able to send datagrams _from_ non-local IP */
+            tproxy = ls[i].tproxy;
+            if (setsockopt(s, SOL_IP, IP_TRANSPARENT, &tproxy,
+                     sizeof(tproxy)) == -1) {
+                ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
+                     "setsockopt(SOL_IP, IP_TRANSPARENT) %V failed",
+                     &ls[i].addr_text);
+                return NGX_ERROR;
+            }
+#endif
 
             ngx_log_debug2(NGX_LOG_DEBUG_CORE, log, 0,
                            "bind() %V #%d ", &ls[i].addr_text, s);
@@ -770,6 +812,18 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
                               ls[i].fastopen, &ls[i].addr_text);
             }
         }
+#endif
+
+
+#if (NGX_HAVE_TPROXY)
+		if (setsockopt(ls[i].fd, SOL_IP, IP_TRANSPARENT,
+					   (const void *) &ls[i].tproxy, sizeof(int))
+			== -1)
+		{
+			ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_socket_errno,
+						  "setsockopt(IP_TRANSPARENT, %d) %V failed, ignored",
+						  ls[i].fastopen, &ls[i].addr_text);
+		}
 #endif
 
 #if 0

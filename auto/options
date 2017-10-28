@@ -44,7 +44,7 @@ EVENT_POLL=NO
 USE_THREADS=NO
 
 NGX_FILE_AIO=NO
-
+NGX_TPROXY=NO
 HTTP=YES
 
 NGX_HTTP_LOG_PATH=
@@ -209,7 +209,7 @@ do
             NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
 $0: warning: the \"--with-ipv6\" option is deprecated"
         ;;
-
+        --with-tproxy)                   NGX_TPROXY=YES             ;;
         --without-http)                  HTTP=NO                    ;;
         --without-http-cache)            HTTP_CACHE=NO              ;;
 
@@ -429,6 +429,7 @@ cat << END
   --with-threads                     enable thread pool support
 
   --with-file-aio                    enable file AIO support
+  --with-tproxy                      enable TPROXY support
 
   --with-http_ssl_module             enable ngx_http_ssl_module
   --with-http_v2_module              enable ngx_http_v2_module
