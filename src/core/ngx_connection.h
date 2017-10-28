@@ -87,6 +87,7 @@ struct ngx_listening_s {
     int                 fastopen;
 #endif
 #if (NGX_HAVE_TPROXY)
+    unsigned            tproxy;
 #endif
 
 };
