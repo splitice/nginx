@@ -187,6 +187,7 @@ static void ngx_http_upstream_ssl_init_connection(ngx_http_request_t *,
 static void ngx_http_upstream_ssl_handshake_handler(ngx_connection_t *c);
 static void ngx_http_upstream_ssl_handshake(ngx_http_request_t *,
     ngx_http_upstream_t *u, ngx_connection_t *c);
+static void ngx_http_upstream_ssl_save_session(ngx_connection_t *c);
 static ngx_int_t ngx_http_upstream_ssl_name(ngx_http_request_t *r,
     ngx_http_upstream_t *u, ngx_connection_t *c);
 #endif
@@ -625,6 +626,10 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     if (ngx_http_upstream_set_local(r, u, u->conf->local) != NGX_OK) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
+    }
+
+    if (u->conf->socket_keepalive) {
+        u->peer.so_keepalive = 1;
     }
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
@@ -1545,6 +1550,8 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     c = u->peer.connection;
 
+    c->requests++;
+
     c->data = r;
 
     c->write->handler = ngx_http_upstream_handler;
@@ -1555,6 +1562,10 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     c->sendfile &= r->connection->sendfile;
     u->output.sendfile = c->sendfile;
+
+    if (r->connection->tcp_nopush == NGX_TCP_NOPUSH_DISABLED) {
+        c->tcp_nopush = NGX_TCP_NOPUSH_DISABLED;
+    }
 
     if (c->pool == NULL) {
 
@@ -1671,6 +1682,8 @@ ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
     }
 
     if (u->conf->ssl_session_reuse) {
+        c->ssl->save_session = ngx_http_upstream_ssl_save_session;
+
         if (u->peer.set_session(&u->peer, u->peer.data) != NGX_OK) {
             ngx_http_upstream_finalize_request(r, u,
                                                NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -1755,10 +1768,6 @@ ngx_http_upstream_ssl_handshake(ngx_http_request_t *r, ngx_http_upstream_t *u,
             }
         }
 
-        if (u->conf->ssl_session_reuse) {
-            u->peer.save_session(&u->peer, u->peer.data);
-        }
-
         c->write->handler = ngx_http_upstream_handler;
         c->read->handler = ngx_http_upstream_handler;
 
@@ -1775,6 +1784,27 @@ ngx_http_upstream_ssl_handshake(ngx_http_request_t *r, ngx_http_upstream_t *u,
 failed:
 
     ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);
+}
+
+
+static void
+ngx_http_upstream_ssl_save_session(ngx_connection_t *c)
+{
+    ngx_http_request_t   *r;
+    ngx_http_upstream_t  *u;
+
+    if (c->idle) {
+        return;
+    }
+
+    r = c->data;
+
+    u = r->upstream;
+    c = r->connection;
+
+    ngx_http_set_log_request(c->log, r);
+
+    u->peer.save_session(&u->peer, u->peer.data);
 }
 
 
@@ -2008,6 +2038,18 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
             return;
         }
 
+        if (c->write->ready && c->tcp_nopush == NGX_TCP_NOPUSH_SET) {
+            if (ngx_tcp_push(c->fd) == -1) {
+                ngx_log_error(NGX_LOG_CRIT, c->log, ngx_socket_errno,
+                              ngx_tcp_push_n " failed");
+                ngx_http_upstream_finalize_request(r, u,
+                                               NGX_HTTP_INTERNAL_SERVER_ERROR);
+                return;
+            }
+
+            c->tcp_nopush = NGX_TCP_NOPUSH_UNSET;
+        }
+
         return;
     }
 
@@ -2097,7 +2139,7 @@ ngx_http_upstream_send_request_body(ngx_http_request_t *r,
         out = u->request_bufs;
 
         if (r->request_body->bufs) {
-            for (cl = out; cl->next; cl = out->next) { /* void */ }
+            for (cl = out; cl->next; cl = cl->next) { /* void */ }
             cl->next = r->request_body->bufs;
             r->request_body->bufs = NULL;
         }
@@ -2901,7 +2943,8 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
     }
 
     if (r->request_body && r->request_body->temp_file
-        && r == r->main && !r->preserve_body)
+        && r == r->main && !r->preserve_body
+        && !u->conf->preserve_output)
     {
         ngx_pool_run_cleanup_file(r->pool, r->request_body->temp_file->file.fd);
         r->request_body->temp_file->file.fd = NGX_INVALID_FILE;
