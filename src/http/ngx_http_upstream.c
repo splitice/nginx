@@ -6219,8 +6219,8 @@ ngx_http_upstream_mark_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
     } else {
         rc = ngx_atoof(value[1].data, value[1].len);
         if (rc == NGX_ERROR) {
-            ngx_log_error(NGX_LOG_EMERG, cycle->log, 0,
-                            "invalid mark \"%s\"", v);
+            ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
+                            "invalid mark \"%s\"", value[1].data);
             
             return NGX_CONF_ERROR;
         }
@@ -6312,7 +6312,7 @@ ngx_http_upstream_set_mark(ngx_http_request_t *r, ngx_http_upstream_t *u,
     }
 
     u->peer.has_mark = 1;
-    u->peer.mark = (uint32_t)addr;
+    u->peer.mark = (uint32_t)rc;
 
     return NGX_OK;
 }
