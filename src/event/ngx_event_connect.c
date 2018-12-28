@@ -157,6 +157,22 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         }
     }
 
+#if (NGX_LINUX)
+
+    if (pc->has_mark) {
+        int  mark = pc->mark;
+
+        if (setsockopt(s, SOL_SOCKET, SO_MARK,
+                        (const void *) &mark, sizeof(int))
+                == -1)
+        {
+            ngx_log_error(NGX_LOG_ALERT, pc->log, ngx_socket_errno,
+                            "setsockopt(SO_MARK) failed");
+            goto failed;
+        }
+    }
+#endif
+
     if (type == SOCK_STREAM) {
         c->recv = ngx_recv;
         c->send = ngx_send;

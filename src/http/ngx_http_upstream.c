@@ -177,6 +177,8 @@ static char *ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd,
 
 static ngx_int_t ngx_http_upstream_set_local(ngx_http_request_t *r,
   ngx_http_upstream_t *u, ngx_http_upstream_local_t *local);
+static ngx_int_t ngx_http_upstream_set_mark(ngx_http_request_t *r,
+  ngx_http_upstream_t *u, ngx_http_upstream_mark_t *local);
 
 static void *ngx_http_upstream_create_main_conf(ngx_conf_t *cf);
 static char *ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf);
@@ -624,6 +626,11 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     }
 
     if (ngx_http_upstream_set_local(r, u, u->conf->local) != NGX_OK) {
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    if (ngx_http_upstream_set_mark(r, u, u->conf->mark) != NGX_OK) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -6159,6 +6166,71 @@ ngx_http_upstream_bind_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
 }
 
 
+char *
+ngx_http_upstream_mark_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf)
+{
+    char  *p = conf;
+
+    ngx_int_t                           rc;
+    ngx_str_t                          *value;
+    ngx_http_complex_value_t            cv;
+    ngx_http_upstream_mark_t         **plocal, *local;
+    ngx_http_compile_complex_value_t    ccv;
+
+    plocal = (ngx_http_upstream_mark_t **) (p + cmd->offset);
+
+    if (*plocal != NGX_CONF_UNSET_PTR) {
+        return "is duplicate";
+    }
+
+    value = cf->args->elts;
+
+    if (cf->args->nelts == 2 && ngx_strcmp(value[1].data, "off") == 0) {
+        *plocal = NULL;
+        return NGX_CONF_OK;
+    }
+
+    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+    ccv.cf = cf;
+    ccv.value = &value[1];
+    ccv.complex_value = &cv;
+
+    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    local = ngx_pcalloc(cf->pool, sizeof(ngx_http_upstream_mark_t));
+    if (local == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    *plocal = local;
+
+    if (cv.lengths) {
+        local->value = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+        if (local->value == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        *local->value = cv;
+
+    } else {
+        rc = ngx_atoof(value[1].data, value[1].len);
+        if (rc == NGX_ERROR) {
+            ngx_log_error(NGX_LOG_EMERG, cycle->log, 0,
+                            "invalid mark \"%s\"", v);
+            
+            return NGX_CONF_ERROR;
+        }
+
+        local->mark = rc;
+    }
+
+    return NGX_CONF_OK;
+}
+
 static ngx_int_t
 ngx_http_upstream_set_local(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_http_upstream_local_t *local)
@@ -6168,7 +6240,7 @@ ngx_http_upstream_set_local(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_addr_t  *addr;
 
     if (local == NULL) {
-        u->peer.local = NULL;
+        u->peer.local = -1;
         return NGX_OK;
     }
 
@@ -6189,16 +6261,44 @@ ngx_http_upstream_set_local(ngx_http_request_t *r, ngx_http_upstream_t *u,
         return NGX_OK;
     }
 
-    addr = ngx_palloc(r->pool, sizeof(ngx_addr_t));
-    if (addr == NULL) {
-        return NGX_ERROR;
-    }
-
-    rc = ngx_parse_addr_port(r->pool, addr, val.data, val.len);
+    rc = ngx_atoof(val.data, val.len);
     if (rc == NGX_ERROR) {
         return NGX_ERROR;
     }
 
+    u->peer.mark = rc;
+
+    return NGX_OK;
+}
+
+static ngx_int_t
+ngx_http_upstream_set_mark(ngx_http_request_t *r, ngx_http_upstream_t *u,
+    ngx_http_upstream_mark_t *local)
+{
+    ngx_int_t    rc;
+    ngx_str_t    val;
+
+    if (local == NULL) {
+        u->peer.has_mark = 0;
+        u->peer.mark = NULL;
+        return NGX_OK;
+    }
+
+    if (local->value == NULL) {
+        u->peer.has_mark = 1;
+        u->peer.mark = (uint32_t)local->mark;
+        return NGX_OK;
+    }
+
+    if (ngx_http_complex_value(r, local->value, &val) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    if (val.len == 0) {
+        return NGX_OK;
+    }
+
+    rc = ngx_atoof(val.data, val.len);
     if (rc != NGX_OK) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "invalid local address \"%V\"", &val);
@@ -6206,11 +6306,11 @@ ngx_http_upstream_set_local(ngx_http_request_t *r, ngx_http_upstream_t *u,
     }
 
     addr->name = val;
-    u->peer.local = addr;
+    u->peer.has_mark = 1;
+    u->peer.mark = (uint32_t)addr;
 
     return NGX_OK;
 }
-
 
 char *
 ngx_http_upstream_param_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,

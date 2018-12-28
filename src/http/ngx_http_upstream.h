@@ -144,6 +144,11 @@ typedef struct {
 #endif
 } ngx_http_upstream_local_t;
 
+typedef struct {
+    off_t                            mark;
+    ngx_http_complex_value_t        *value;
+} ngx_http_upstream_mark_t;
+
 
 typedef struct {
     ngx_http_upstream_srv_conf_t    *upstream;
@@ -188,6 +193,7 @@ typedef struct {
     ngx_array_t                     *pass_headers;
 
     ngx_http_upstream_local_t       *local;
+    ngx_http_upstream_mark_t        *mark;
     ngx_flag_t                       socket_keepalive;
 
 #if (NGX_HTTP_CACHE)
@@ -416,6 +422,8 @@ void ngx_http_upstream_init(ngx_http_request_t *r);
 ngx_http_upstream_srv_conf_t *ngx_http_upstream_add(ngx_conf_t *cf,
     ngx_url_t *u, ngx_uint_t flags);
 char *ngx_http_upstream_bind_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
+char *ngx_http_upstream_mark_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 char *ngx_http_upstream_param_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
