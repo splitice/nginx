@@ -158,7 +158,6 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     }
 
 #if (NGX_LINUX)
-
     if (pc->has_mark) {
         int  mark = pc->mark;
 

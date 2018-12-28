@@ -6240,7 +6240,7 @@ ngx_http_upstream_set_local(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_addr_t  *addr;
 
     if (local == NULL) {
-        u->peer.local = -1;
+        u->peer.local = NULL;
         return NGX_OK;
     }
 
@@ -6261,12 +6261,18 @@ ngx_http_upstream_set_local(ngx_http_request_t *r, ngx_http_upstream_t *u,
         return NGX_OK;
     }
 
-    rc = ngx_atoof(val.data, val.len);
+    addr = ngx_palloc(r->pool, sizeof(ngx_addr_t));
+    if (addr == NULL) {
+        return NGX_ERROR;
+    }
+
+    rc = ngx_parse_addr_port(r->pool, addr, val.data, val.len);
     if (rc == NGX_ERROR) {
         return NGX_ERROR;
     }
 
-    u->peer.mark = rc;
+    addr->name = val;
+    u->peer.local = addr;
 
     return NGX_OK;
 }
@@ -6280,7 +6286,7 @@ ngx_http_upstream_set_mark(ngx_http_request_t *r, ngx_http_upstream_t *u,
 
     if (local == NULL) {
         u->peer.has_mark = 0;
-        u->peer.mark = NULL;
+        u->peer.mark = 0;
         return NGX_OK;
     }
 
@@ -6305,7 +6311,6 @@ ngx_http_upstream_set_mark(ngx_http_request_t *r, ngx_http_upstream_t *u,
         return NGX_OK;
     }
 
-    addr->name = val;
     u->peer.has_mark = 1;
     u->peer.mark = (uint32_t)addr;
 
