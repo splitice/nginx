@@ -6192,19 +6192,19 @@ ngx_http_upstream_mark_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
     ngx_int_t                           rc;
     ngx_str_t                          *value;
     ngx_http_complex_value_t            cv;
-    ngx_http_upstream_mark_t         **plocal, *local;
+    ngx_http_upstream_mark_t         **pmark, *mark;
     ngx_http_compile_complex_value_t    ccv;
 
-    plocal = (ngx_http_upstream_mark_t **) (p + cmd->offset);
+    pmark = (ngx_http_upstream_mark_t **) (p + cmd->offset);
 
-    if (*plocal != NGX_CONF_UNSET_PTR) {
+    if (*pmark != NGX_CONF_UNSET_PTR) {
         return "is duplicate";
     }
 
     value = cf->args->elts;
 
     if (cf->args->nelts == 2 && ngx_strcmp(value[1].data, "off") == 0) {
-        *plocal = NULL;
+        *pmark = NULL;
         return NGX_CONF_OK;
     }
 
@@ -6218,20 +6218,20 @@ ngx_http_upstream_mark_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
         return NGX_CONF_ERROR;
     }
 
-    local = ngx_pcalloc(cf->pool, sizeof(ngx_http_upstream_mark_t));
-    if (local == NULL) {
+    mark = ngx_pcalloc(cf->pool, sizeof(ngx_http_upstream_mark_t));
+    if (mark == NULL) {
         return NGX_CONF_ERROR;
     }
 
-    *plocal = local;
+    *pmark = mark;
 
     if (cv.lengths) {
-        local->value = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
-        if (local->value == NULL) {
+        mark->value = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+        if (mark->value == NULL) {
             return NGX_CONF_ERROR;
         }
 
-        *local->value = cv;
+        *mark->value = cv;
 
     } else {
         rc = ngx_atoof(value[1].data, value[1].len);
@@ -6242,7 +6242,7 @@ ngx_http_upstream_mark_set_slot(ngx_conf_t *cf, ngx_command_t *cmd,
             return NGX_CONF_ERROR;
         }
 
-        local->mark = rc;
+        mark->mark = rc;
     }
 
     return NGX_CONF_OK;
