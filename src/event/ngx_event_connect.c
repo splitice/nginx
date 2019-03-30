@@ -162,7 +162,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         int  mark = pc->mark;
 
         if (setsockopt(s, SOL_SOCKET, SO_MARK,
-                        (const void *) &mark, sizeof(int))
+                        (const int *) &mark, sizeof(int))
                 == -1)
         {
             ngx_log_error(NGX_LOG_ALERT, pc->log, ngx_socket_errno,
