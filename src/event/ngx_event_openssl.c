@@ -1648,6 +1648,23 @@ ngx_ssl_handshake(ngx_connection_t *c)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_get_error: %d", sslerr);
 
+#ifdef SSL_ERROR_WANT_CLIENT_HELLO_CB
+    if (sslerr == SSL_ERROR_WANT_CLIENT_HELLO_CB) {
+        c->read->handler = ngx_ssl_handshake_handler;
+        c->write->handler = ngx_ssl_handshake_handler;
+
+        if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        return NGX_AGAIN;
+    }
+#endif
+
     if (sslerr == SSL_ERROR_WANT_READ) {
         c->read->ready = 0;
         c->read->handler = ngx_ssl_handshake_handler;
@@ -1776,6 +1793,23 @@ ngx_ssl_try_early_data(ngx_connection_t *c)
 
         return NGX_AGAIN;
     }
+
+#ifdef SSL_ERROR_WANT_CLIENT_HELLO_CB
+    if (sslerr == SSL_ERROR_WANT_CLIENT_HELLO_CB) {
+        c->read->handler = ngx_ssl_handshake_handler;
+        c->write->handler = ngx_ssl_handshake_handler;
+
+        if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        return NGX_AGAIN;
+    }
+#endif
 
     if (sslerr == SSL_ERROR_WANT_WRITE) {
         c->write->ready = 0;
