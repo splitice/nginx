@@ -208,23 +208,19 @@ ngx_msec_t send_timeout(ngx_http_request_t *r, ngx_http_core_loc_conf_t *cnf){
     time_t elapsed;
     ngx_connection_t* c;
     int dest;
+    uint32_t rate;
 
     c = r->connection;
-    ngx_log_error(NGX_LOG_INFO, c->log, 0, "a");
-    if(!r->upstream || r->upstream->upgrade) return cnf->send_timeout;
+    if(!r->upstream || r->upstream->upgrade) return cnf->send_timeout * 2;
     elapsed = ngx_time() - r->start_sec;
-    ngx_log_error(NGX_LOG_INFO, c->log, 0, "b");
-    if(elapsed < 30) return cnf->send_timeout;
-    ngx_log_error(NGX_LOG_INFO, c->log, 0, "c");
+    if(elapsed < 30) return cnf->send_timeout * 2;
     if(!c) return cnf->send_timeout;
-    ngx_log_error(NGX_LOG_INFO, c->log, 0, "d");
-    if ((c->sent / elapsed) > 1000) return cnf->send_timeout;
-    ngx_log_error(NGX_LOG_INFO, c->log, 0, "e");
+    rate = c->sent / elapsed;
+    if (rate > 10000) return cnf->send_timeout;
     if(ioctl(c->fd, SIOCOUTQ, &dest) == 0) return cnf->send_timeout;
-    ngx_log_error(NGX_LOG_INFO, c->log, 0, "f");
-    if(dest < 400000) return cnf->send_timeout;
-    ngx_log_error(NGX_LOG_INFO, c->log, 0, "slow read detected");
-    return 100;
+    if(dest < 100000) return cnf->send_timeout;
+    if(elapsed > 60 && rate < 500) return 100;
+    return 6000;
 }
 
 ngx_msec_t send_timeout_v(void* a, void *b){
