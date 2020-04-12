@@ -8,6 +8,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
+#include <linux/sockios.h>
 
 
 static void ngx_http_wait_request_handler(ngx_event_t *ev);
@@ -202,6 +203,33 @@ ngx_http_header_t  ngx_http_headers_in[] = {
     { ngx_null_string, 0, NULL }
 };
 
+
+ngx_msec_t send_timeout(ngx_http_request_t *r, ngx_http_core_loc_conf_t *cnf){
+    time_t elapsed;
+    ngx_connection_t* c;
+    int dest;
+
+    c = r->connection;
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, "a");
+    if(!r->upstream || r->upstream->upgrade) return cnf->send_timeout;
+    elapsed = ngx_time() - r->start_sec;
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, "b");
+    if(elapsed < 30) return cnf->send_timeout;
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, "c");
+    if(!c) return cnf->send_timeout;
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, "d");
+    if ((c->sent / elapsed) > 1000) return cnf->send_timeout;
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, "e");
+    if(ioctl(c->fd, SIOCOUTQ, &dest) == 0) return cnf->send_timeout;
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, "f");
+    if(dest < 400000) return cnf->send_timeout;
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, "slow read detected");
+    return 100;
+}
+
+ngx_msec_t send_timeout_v(void* a, void *b){
+    return send_timeout((ngx_http_request_t *)a,(ngx_http_core_loc_conf_t *)b);
+}
 
 void
 ngx_http_init_connection(ngx_connection_t *c)
@@ -2749,7 +2777,7 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
     if (!wev->delayed) {
-        ngx_add_timer(wev, clcf->send_timeout);
+        ngx_add_timer(wev, send_timeout(r, clcf));
     }
 
     if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
@@ -2791,7 +2819,7 @@ ngx_http_writer(ngx_http_request_t *r)
                        "http writer delayed");
 
         if (!wev->delayed) {
-            ngx_add_timer(wev, clcf->send_timeout);
+            ngx_add_timer(wev, send_timeout(r, clcf));
         }
 
         if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
@@ -2815,7 +2843,7 @@ ngx_http_writer(ngx_http_request_t *r)
     if (r->buffered || r->postponed || (r == r->main && c->buffered)) {
 
         if (!wev->delayed) {
-            ngx_add_timer(wev, clcf->send_timeout);
+            ngx_add_timer(wev, send_timeout(r, clcf));
         }
 
         if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
