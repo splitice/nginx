@@ -223,8 +223,8 @@ ngx_msec_t send_timeout(ngx_http_request_t *r, ngx_msec_t send_timeout){
     return 6000;
 }
 
-ngx_msec_t send_timeout_v(void* a, ngx_msec_t send_timeout){
-    return send_timeout((ngx_http_request_t *)a, send_timeout);
+ngx_msec_t send_timeout_v(void* a, ngx_msec_t st){
+    return send_timeout((ngx_http_request_t *)a, st);
 }
 
 void
