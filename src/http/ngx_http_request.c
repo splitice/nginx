@@ -218,8 +218,8 @@ ngx_msec_t send_timeout(ngx_http_request_t *r, ngx_msec_t send_timeout){
     rate = c->sent / elapsed;
     if (rate > 10000) return send_timeout;
     if(ioctl(c->fd, SIOCOUTQ, &dest) == 0) return send_timeout;
-    if(dest < 100000) return send_timeout;
-    if(elapsed > 60 && rate < 500) return 100;
+    if(dest < 60000) return send_timeout;
+    if(elapsed > 60 && rate <= 500) return 1; /* that's real soon mate */ 
     return 6000;
 }
 
