@@ -610,7 +610,7 @@ extern ngx_http_header_out_t   ngx_http_headers_out[];
 struct ngx_http_core_loc_conf_s;
 typedef struct ngx_http_core_loc_conf_s  ngx_http_core_loc_conf_t;
 
-ngx_msec_t send_timeout(ngx_http_request_t *r, ngx_http_core_loc_conf_t *cnf);
+ngx_msec_t send_timeout(ngx_http_request_t *r, ngx_msec_t send_timeout);
 
 
 #define ngx_http_set_log_request(log, r)                                      \

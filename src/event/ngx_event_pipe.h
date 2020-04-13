@@ -80,9 +80,9 @@ struct ngx_event_pipe_s {
     ssize_t            temp_file_write_size;
 
     ngx_msec_t         read_timeout;
+    ngx_msec_t         send_timeout;
     
     void              *r;
-    void              *clcf;
 
     ssize_t            send_lowat;
 
