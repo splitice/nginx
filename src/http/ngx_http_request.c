@@ -385,7 +385,7 @@ ngx_http_init_connection(ngx_connection_t *c)
         return;
     }
 
-    ngx_add_timer(rev, c->listening->post_accept_timeout);
+    ngx_add_timer(rev, hc->ssl ? c->listening->ssl_hello_timeout : c->listening->post_accept_timeout);
     ngx_reusable_connection(c, 1);
 
     if (ngx_handle_read_event(rev, 0) != NGX_OK) {
@@ -860,6 +860,12 @@ ngx_http_ssl_handshake_handler(ngx_connection_t *c)
         /* STUB: epoll edge */ c->write->handler = ngx_http_empty_handler;
 
         ngx_reusable_connection(c, 1);
+
+        // start new timer for the request
+        if(c->read->timer_set) {
+            ngx_del_timer(c->read);
+            ngx_add_timer(c->read, c->listening->post_accept_timeout);
+        }
 
         ngx_http_wait_request_handler(c->read);
 

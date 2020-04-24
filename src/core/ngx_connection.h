@@ -47,6 +47,9 @@ struct ngx_listening_s {
     size_t              post_accept_buffer_size;
     /* should be here because of the deferred accept */
     ngx_msec_t          post_accept_timeout;
+    
+    ngx_msec_t          ssl_hello_timeout;
+    ngx_msec_t          ssl_certificate_timeout;
 
     ngx_listening_t    *previous;
     ngx_connection_t   *connection;

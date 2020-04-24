@@ -199,6 +199,10 @@ typedef struct {
 
     ngx_msec_t                  client_header_timeout;
 
+    ngx_msec_t                  client_ssl_hello_timeout;
+    ngx_msec_t                  client_ssl_certificate_timeout;
+
+
     ngx_flag_t                  ignore_invalid_headers;
     ngx_flag_t                  merge_slashes;
     ngx_flag_t                  underscores_in_headers;
