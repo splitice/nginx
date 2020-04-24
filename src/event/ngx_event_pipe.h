@@ -81,6 +81,9 @@ struct ngx_event_pipe_s {
 
     ngx_msec_t         read_timeout;
     ngx_msec_t         send_timeout;
+    
+    void              *r;
+
     ssize_t            send_lowat;
 
     ngx_pool_t        *pool;

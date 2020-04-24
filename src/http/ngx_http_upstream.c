@@ -3233,6 +3233,7 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
     p->send_lowat = clcf->send_lowat;
 
     p->length = -1;
+    p->r = r;
 
     if (u->input_filter_init
         && u->input_filter_init(p->input_ctx) != NGX_OK)
@@ -3519,7 +3520,7 @@ ngx_http_upstream_process_upgraded(ngx_http_request_t *r,
     }
 
     if (downstream->write->active && !downstream->write->ready) {
-        ngx_add_timer(downstream->write, clcf->send_timeout);
+        ngx_add_timer(downstream->write, send_timeout(r,clcf->send_timeout));
 
     } else if (downstream->write->timer_set) {
         ngx_del_timer(downstream->write);
@@ -3683,7 +3684,7 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
     }
 
     if (downstream->write->active && !downstream->write->ready) {
-        ngx_add_timer(downstream->write, clcf->send_timeout);
+        ngx_add_timer(downstream->write, send_timeout(r, clcf->send_timeout));
 
     } else if (downstream->write->timer_set) {
         ngx_del_timer(downstream->write);
