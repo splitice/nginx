@@ -9,12 +9,26 @@
 #include <ngx_core.h>
 #include <ngx_event.h>
 
+#include <stdio.h>
+#include <stdint.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <fcntl.h>
+
+#include <openssl/conf.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/err.h>
 
 #define NGX_SSL_PASSWORD_BUFFER_SIZE  4096
 
 
 typedef struct {
     ngx_uint_t  engine;   /* unsigned  engine:1; */
+    EVP_PKEY* pkey;
 } ngx_openssl_conf_t;
 
 
@@ -87,6 +101,7 @@ static time_t ngx_ssl_parse_time(
 
 static void *ngx_openssl_create_conf(ngx_cycle_t *cycle);
 static char *ngx_openssl_engine(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static char *ngx_openssl_pkey(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void ngx_openssl_exit(ngx_cycle_t *cycle);
 
 
@@ -95,6 +110,12 @@ static ngx_command_t  ngx_openssl_commands[] = {
     { ngx_string("ssl_engine"),
       NGX_MAIN_CONF|NGX_DIRECT_CONF|NGX_CONF_TAKE1,
       ngx_openssl_engine,
+      0,
+      0,
+      NULL },
+    { ngx_string("ssl_private_key"),
+      NGX_MAIN_CONF|NGX_DIRECT_CONF|NGX_CONF_TAKE1,
+      ngx_openssl_pkey,
       0,
       0,
       NULL },
@@ -690,6 +711,119 @@ ngx_ssl_load_certificate(ngx_pool_t *pool, char **err, ngx_str_t *cert,
     return x509;
 }
 
+static int envelope_open(EVP_PKEY *priv_key, unsigned char *ciphertext, int ciphertext_len,
+	unsigned char *encrypted_key, int encrypted_key_len, unsigned char *iv,
+	unsigned char *plaintext)
+{
+	EVP_CIPHER_CTX *ctx;
+
+	int len;
+
+	int plaintext_len;
+
+
+	/* Create and initialise the context */
+	if(!(ctx = EVP_CIPHER_CTX_new())) return -3;
+
+	/* Initialise the decryption operation. The asymmetric private key is
+	 * provided and priv_key, whilst the encrypted session key is held in
+	 * encrypted_key */
+	if(1 != EVP_OpenInit(ctx, EVP_aes_256_cbc(), encrypted_key,
+		encrypted_key_len, iv, priv_key))
+		return -2;
+
+	/* Provide the message to be decrypted, and obtain the plaintext output.
+	 * EVP_OpenUpdate can be called multiple times if necessary
+	 */
+	if(1 != EVP_OpenUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+		return -1;
+
+	plaintext_len = len;
+
+	/* Finalise the decryption. Further plaintext bytes may be written at
+	 * this stage.
+	 */
+	if(0 == EVP_OpenFinal(ctx, plaintext + len, &len)) return -4;
+	plaintext_len += len;
+
+	/* Clean up */
+	EVP_CIPHER_CTX_free(ctx);
+
+	return plaintext_len;
+}
+
+static EVP_PKEY* open_private_key(const char *filename){
+    
+    BIO              *bio;
+    EVP_PKEY         *pkey;
+
+    bio = BIO_new_file(filename, "r");
+    pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+    BIO_free(bio);
+    return pkey;
+}
+
+
+static char* decrypt_key(ngx_pool_t *pool, const char* fname, char** err){
+    uint32_t keySize, fileType, ivLength;
+    off_t fileSize;
+    int encSize, plainTextLen;
+    char* keyData, *encData, *plaintextData, *ivData;
+
+    int fd = open(fname, O_RDONLY);
+    fileSize = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+
+    read(fd, &fileType, sizeof(fileType));
+    if(fileType != 1){
+        *err = "invalid format";
+        return -1;
+    }
+    read(fd, &keySize, sizeof(keySize));
+    read(fd, &ivLength, sizeof(ivLength));
+
+    keyData = malloc(keySize);
+    read(fd, keyData, keySize);
+
+    ivData = malloc(ivLength);
+    read(fd, ivData, ivLength);
+
+    encSize = ((int)fileSize) - keySize - 12 - ivLength;
+    if(encSize <= 0) {
+        *err = "invalid size";
+        return -1;
+    }
+    encData = malloc(encSize);
+    read(fd, encData, encSize);
+
+    plaintextData = malloc(encSize + 1);
+    plaintextData[encSize] = 0;
+
+
+    plainTextLen = envelope_open(privKey, encData, encSize, keyData, keySize, ivData, plaintextData);
+
+    free(encData);
+    free(keyData);
+    free(ivData);
+
+    close(fd);
+
+    if(plaintextData <= 0){
+        *err = "unable to decode";
+        return -1;
+    }
+
+    return plaintextData;
+}
+
+
+    EVP_PKEY* privKey = open_private_key("key");
+    if(!privKey){
+        *err = "invalid private key";
+        return;
+    }
+
+    EVP_PKEY_free(privKey);
 
 static EVP_PKEY *
 ngx_ssl_load_certificate_key(ngx_pool_t *pool, char **err,
@@ -700,6 +834,11 @@ ngx_ssl_load_certificate_key(ngx_pool_t *pool, char **err,
     ngx_str_t        *pwd;
     ngx_uint_t        tries;
     pem_password_cb  *cb;
+
+    // for public key decoding
+    char* key_buffer = NULL;
+    void              ***cf;
+    ngx_openssl_conf_t    *ecf;
 
     if (ngx_strncmp(key->data, "engine:", sizeof("engine:") - 1) == 0) {
 
@@ -747,7 +886,31 @@ ngx_ssl_load_certificate_key(ngx_pool_t *pool, char **err,
 #endif
     }
 
-    if (ngx_strncmp(key->data, "data:", sizeof("data:") - 1) == 0) {
+    if(ngx_strncmp(key->data, "e:", sizeof("e:") - 1) == 0){
+        cf = ngx_get_conf(cycle->conf_ctx, ngx_openssl_module);
+        if(!cf){
+            *err = "no conf";
+            return NULL;
+        }
+
+        ecf = (*cf)[ngx_openssl_module.ctx_index];
+        if(!ecf || !ecf->pkey){
+            *err = "no RSA key";
+            return NULL;
+        }
+
+        key_buffer = decrypt_key(pool, ecf->pkey, key->data + (sizeof("e:") - 1), err);
+        if(key_buffer <= 0){
+            if(!*err) *err = "decryption error";
+            return NULL;
+        }
+        
+        bio = BIO_new_mem_buf(key_buffer, strlen(key_buffer)));
+        if (bio == NULL) {
+            *err = "BIO_new_mem_buf() failed";
+            return NULL;
+        }
+    } else if (ngx_strncmp(key->data, "data:", sizeof("data:") - 1) == 0) {
 
         bio = BIO_new_mem_buf(key->data + sizeof("data:") - 1,
                               key->len - (sizeof("data:") - 1));
@@ -803,6 +966,9 @@ ngx_ssl_load_certificate_key(ngx_pool_t *pool, char **err,
     }
 
     BIO_free(bio);
+    if(key_buffer != NULL){
+        free(key_buffer);
+    }
 
     return pkey;
 }
@@ -5213,6 +5379,34 @@ ngx_openssl_engine(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     ENGINE_free(engine);
+
+    return NGX_CONF_OK;
+
+#else
+
+    return "is not supported";
+
+#endif
+}
+
+static char *
+ngx_openssl_pkey(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+#ifndef OPENSSL_NO_ENGINE
+
+    ngx_openssl_conf_t *oscf = conf;
+
+    ENGINE     *engine;
+    ngx_str_t  *value;
+
+    if (oscf->rsa) {
+        return "is duplicate";
+    }
+
+    oscf->rsa = open_private_key((char *) value[1].data);
+    if(!oscf->rsa){
+        return "is not supported";
+    }
 
     return NGX_CONF_OK;
 
