@@ -901,14 +901,15 @@ ngx_ssl_load_certificate_key(ngx_pool_t *pool, ngx_conf_t *cnf, char **err,
     }
 
     if(cnf != NULL && ngx_strncmp(key->data, "e:", sizeof("e:") - 1) == 0){
-        cf = ngx_get_conf(cnf->cycle->conf_ctx, ngx_openssl_module);
-        if(!cf){
+        ecf = (ngx_openssl_conf_t*)ngx_get_conf(cnf->cycle->conf_ctx, ngx_openssl_module);
+        if(!ecf){
             *err = "no conf";
             return NULL;
         }
 
-        ecf = (*cf)[ngx_openssl_module.ctx_index];
-        if(!ecf || !ecf->pkey){
+        //ecf = (*cf)[ngx_openssl_module.ctx_index];
+        //!ecf || 
+        if(!ecf->pkey){
             *err = "no RSA key";
             return NULL;
         }
