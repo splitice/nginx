@@ -5418,7 +5418,7 @@ ngx_openssl_pkey(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     oscf->pkey = open_private_key((char *) value[1].data);
     if(!oscf->pkey){
-        return "is not supported";
+        return "is not valid";
     }
 
     return NGX_CONF_OK;
