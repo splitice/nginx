@@ -901,7 +901,9 @@ ngx_ssl_load_certificate_key(ngx_pool_t *pool, ngx_conf_t *cnf, char **err,
     }
 
     if(cnf != NULL && ngx_strncmp(key->data, "e:", sizeof("e:") - 1) == 0){
-        ecf = (ngx_openssl_conf_t*)ngx_get_conf(cnf->cycle->conf_ctx, ngx_openssl_module);
+        cf = ngx_get_conf(cnf->cycle->conf_ctx, ngx_openssl_module);
+        ecf = (*cf)[ngx_openssl_module.ctx_index];
+
         if(!ecf){
             *err = "no conf";
             return NULL;
@@ -5430,8 +5432,11 @@ static void
 ngx_openssl_exit(ngx_cycle_t *cycle)
 {
     ngx_openssl_conf_t *oscf;
+    void              ***cf;
     
-    oscf = (ngx_openssl_conf_t *)ngx_get_conf(cycle->conf_ctx, ngx_openssl_module);
+    cf = ngx_get_conf(cycle->conf_ctx, ngx_openssl_module);
+    oscf = (*cf)[ngx_openssl_module.ctx_index];
+
     if(oscf == NULL || oscf->pkey){
         EVP_PKEY_free(oscf->pkey);
     }
