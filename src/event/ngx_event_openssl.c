@@ -34,7 +34,7 @@ typedef struct {
 
 static X509 *ngx_ssl_load_certificate(ngx_pool_t *pool, char **err,
     ngx_str_t *cert, STACK_OF(X509) **chain);
-static EVP_PKEY *ngx_ssl_load_certificate_key(ngx_pool_t* pool, ngx_conf_t *conf, char **err,
+static EVP_PKEY *ngx_ssl_load_certificate_key(ngx_pool_t* pool, char **err,
     ngx_str_t *key, ngx_array_t *passwords);
 static int ngx_ssl_password_callback(char *buf, int size, int rwflag,
     void *userdata);
@@ -527,7 +527,7 @@ ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
     }
 #endif
 
-    pkey = ngx_ssl_load_certificate_key(cf->pool, cf, &err, key, passwords);
+    pkey = ngx_ssl_load_certificate_key(cf->pool, &err, key, passwords);
     if (pkey == NULL) {
         if (err != NULL) {
             ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
@@ -598,7 +598,7 @@ ngx_ssl_connection_certificate(ngx_connection_t *c, ngx_pool_t *pool,
 
 #endif
 
-    pkey = ngx_ssl_load_certificate_key(pool, NULL, &err, key, passwords);
+    pkey = ngx_ssl_load_certificate_key(pool, &err, key, passwords);
     if (pkey == NULL) {
         if (err != NULL) {
             ngx_ssl_error(NGX_LOG_ERR, c->log, 0,
@@ -839,7 +839,7 @@ static unsigned char* decrypt_key(ngx_pool_t *pool, EVP_PKEY *priv_key, const ch
 }
 
 static EVP_PKEY *
-ngx_ssl_load_certificate_key(ngx_pool_t *pool, ngx_conf_t *cnf, char **err,
+ngx_ssl_load_certificate_key(ngx_pool_t *pool, char **err,
     ngx_str_t *key, ngx_array_t *passwords)
 {
     BIO              *bio;
@@ -900,8 +900,8 @@ ngx_ssl_load_certificate_key(ngx_pool_t *pool, ngx_conf_t *cnf, char **err,
 #endif
     }
 
-    if(cnf != NULL && ngx_strncmp(key->data, "e:", sizeof("e:") - 1) == 0){
-        ecf = ngx_event_get_conf(cnf->cycle->conf_ctx, ngx_openssl_module);
+    if(ngx_strncmp(key->data, "e:", sizeof("e:") - 1) == 0){
+        ecf = ngx_event_get_conf(ngx_cycle->conf_ctx, ngx_openssl_module);
 
         if(!ecf){
             *err = "no conf";
