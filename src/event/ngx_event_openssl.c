@@ -5422,6 +5422,9 @@ ngx_openssl_pkey(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     if(!oscf->pkey){
         return "is not valid";
     }
+    if (EVP_PKEY_id(oscf->pkey) != EVP_PKEY_RSA) {
+        return "is not RSA";
+    }
 
     return NGX_CONF_OK;
 }
