@@ -850,9 +850,9 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         }
 #endif
 
-        if (setuid(ccf->user) == -1) {
+        if (seteuid(ccf->user) == -1) {
             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
-                          "setuid(%d) failed", ccf->user);
+                          "seteuid(%d) failed", ccf->user);
             /* fatal */
             exit(2);
         }
