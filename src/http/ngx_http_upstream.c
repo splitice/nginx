@@ -2714,6 +2714,17 @@ ngx_http_upstream_test_connect(ngx_connection_t *c)
     return NGX_OK;
 }
 
+static ngx_int_t ngx_http_upstream_is_h2(const ngx_str_t* const hv){
+        ngx_uint_t max = hv->len-1;
+        for(ngx_uint_t i=0;i<max;i++){
+                if(hv->data[i] == 'h' && hv->data[i+1] == '2'){
+                        if(max == (i+1) || hv->data[i+2] == ',' || (hv->data[i+2] == 'c' && (max == (i+2) || hv->data[i+3] == ','))){
+                                return NGX_OK;
+                        }
+                }
+        }
+        return NGX_ERROR;
+}
 
 static ngx_int_t
 ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
@@ -2804,6 +2815,16 @@ ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
                           h[i].lowcase_key, h[i].key.len))
         {
             continue;
+        }
+
+        // MH: "Upgrade" header should not be proxied over h2
+        //     Not checking for h2, instead never allowing an upstream server to send a h2 or h2c upgrade request.
+        //     Upstreams should not be able to influence the end user connection.
+        //     Nginx Bug: https://trac.nginx.org/nginx/ticket/915
+        if(h[i].key.len == (sizeof("upgrade") - 1) && ngx_memcmp("upgrade", h[i].lowcase_key, h[i].key.len) == 0){
+            if(h[i].value.len >= (sizeof("h2") - 1) && ngx_http_upstream_is_h2(&h[i].value) == NGX_OK){
+                continue;
+            }
         }
 
         hh = ngx_hash_find(&umcf->headers_in_hash, h[i].hash,
