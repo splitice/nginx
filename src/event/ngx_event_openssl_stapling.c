@@ -359,10 +359,12 @@ ngx_ssl_stapling_issuer(ngx_conf_t *cf, ngx_ssl_t *ssl,
     }
 
     if (rc == 0) {
+        /*
         ngx_log_error(NGX_LOG_WARN, ssl->log, 0,
                       "\"ssl_stapling\" ignored, "
                       "issuer certificate not found for certificate \"%s\"",
                       staple->name);
+        */
         X509_STORE_CTX_free(store_ctx);
         return NGX_DECLINED;
     }
@@ -393,10 +395,12 @@ ngx_ssl_stapling_responder(ngx_conf_t *cf, ngx_ssl_t *ssl,
 
         aia = X509_get1_ocsp(staple->cert);
         if (aia == NULL) {
+            /*
             ngx_log_error(NGX_LOG_WARN, ssl->log, 0,
                           "\"ssl_stapling\" ignored, "
                           "no OCSP responder URL in the certificate \"%s\"",
                           staple->name);
+            */
             return NGX_DECLINED;
         }
 
@@ -406,10 +410,12 @@ ngx_ssl_stapling_responder(ngx_conf_t *cf, ngx_ssl_t *ssl,
         s = sk_value(aia, 0);
 #endif
         if (s == NULL) {
+            /*
             ngx_log_error(NGX_LOG_WARN, ssl->log, 0,
                           "\"ssl_stapling\" ignored, "
                           "no OCSP responder URL in the certificate \"%s\"",
                           staple->name);
+            */
             X509_email_free(aia);
             return NGX_DECLINED;
         }
@@ -440,21 +446,25 @@ ngx_ssl_stapling_responder(ngx_conf_t *cf, ngx_ssl_t *ssl,
         u.url.data += 7;
 
     } else {
+        /*
         ngx_log_error(NGX_LOG_WARN, ssl->log, 0,
                       "\"ssl_stapling\" ignored, "
                       "invalid URL prefix in OCSP responder \"%V\" "
                       "in the certificate \"%s\"",
                       &u.url, staple->name);
+        */
         return NGX_DECLINED;
     }
 
     if (ngx_parse_url(cf->pool, &u) != NGX_OK) {
         if (u.err) {
+            /*
             ngx_log_error(NGX_LOG_WARN, ssl->log, 0,
                           "\"ssl_stapling\" ignored, "
                           "%s in OCSP responder \"%V\" "
                           "in the certificate \"%s\"",
                           u.err, &u.url, staple->name);
+            */
             return NGX_DECLINED;
         }
 
